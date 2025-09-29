@@ -8,12 +8,6 @@ import os
 import base64
 import locale
 
-# Configurando o idioma para Português do Brasil para as datas
-try:
-    locale.setlocale(locale.LC_TIME, 'pt_BR.UTF-8')
-except locale.Error:
-    st.warning("Localidade 'pt_BR.UTF-8' não encontrada. Os meses podem aparecer em inglês.")
-
 # =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 # CONFIGURAÇÃO GERAL E CARREGAMENTO DE DADOS
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
@@ -294,4 +288,5 @@ else:
             fig_mapa.update_layout(height=500, margin={"r":0,"t":40,"l":0,"b":0}, legend_title_text='Condição')
             st.plotly_chart(fig_mapa, use_container_width=True)
         else:
+
             st.warning("Nenhum dado de coordenada de NATIVOS encontrado com os filtros selecionados.")
