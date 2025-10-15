@@ -9,7 +9,7 @@ import locale
 import gspread
 from google.oauth2.service_account import Credentials
 from github import Github
-import re # Importando a biblioteca de expressões regulares
+import re
 
 # --- Configuração de Idioma ---
 try:
@@ -216,7 +216,6 @@ else:
 if df_ictio_periodo.empty:
     st.warning("Nenhuma atividade de resgate registrada para este período com os filtros selecionados.")
 else:
-    # O restante do corpo do dashboard (KPIs, gráficos, mapa)
     total_biomassa_g = df_ictio_periodo['Biomassa_(g)'].sum()
     vivos_biomassa_g = df_ictio_periodo[df_ictio_periodo['Destino'] == 'Vivo']['Biomassa_(g)'].sum()
     
@@ -280,3 +279,95 @@ else:
         st.subheader("Biomassa de NATIVOS Manejada ao Longo do Tempo")
         df_temporal_raw = df_ictio_periodo.copy()
         if tipo_analise == "Dia Específico":
+            df_temporal_raw = df_ictio_master[df_ictio_master['Resgate'].isin(fase_selecionada)].copy()
+        
+        df_temporal_raw = df_temporal_raw[df_temporal_raw['Distribuição'] == 'Nativo']
+        
+        df_temporal_raw.rename(columns={'Destino': 'Condição'}, inplace=True)
+        df_temporal = df_temporal_raw.groupby([df_temporal_raw['Data'].dt.date, 'Condição'])['Biomassa_(g)'].sum().reset_index()
+
+        fig_temporal = px.bar(df_temporal, x='Data', y='Biomassa_(g)', color='Condição',
+                              title="<b>Biomassa de Nativos (g) por Dia e Condição</b>",
+                              color_discrete_map=CHART_COLOR_PALETTE)
+        
+        if tipo_analise == "Dia Específico":
+            fig_temporal.add_vline(x=start_date, line_width=2, line_dash="dash", line_color="grey")
+            fig_temporal.add_annotation(x=start_date, y=1, yref="paper", text="Dia Selecionado", showarrow=False, font=dict(color="grey"), bgcolor="rgba(255,255,255,0.5)", xshift=10, yshift=10)
+            fig_temporal.update_xaxes(tickformat='%d %b %Y') 
+        else:
+            fig_temporal.update_xaxes(tickmode='linear', dtick='D1', tickformat='%d/%m')
+        
+        fig_temporal.update_layout(title_x=0.5, height=400, legend_title_text='Condição', yaxis_title="Biomassa (g)")
+        st.plotly_chart(fig_temporal, use_container_width=True)
+
+    # --- CORREÇÃO DE INDENTAÇÃO ---
+    with st.container(border=True):
+        data_para_fotos = end_date if tipo_analise == "Período" else start_date
+        st.subheader(f"Registros Fotográficos de {data_para_fotos.strftime('%d/%m/%Y')}")
+        
+        if repo:
+            try:
+                path_fotos = f"fotos_atividades/{data_para_fotos.strftime('%Y-%m-%d')}"
+                contents = repo.get_contents(path_fotos)
+                imagens = [file for file in contents if file.name.lower().endswith(('.png', '.jpg', '.jpeg'))]
+                
+                if not imagens:
+                    st.info("Nenhum registro fotográfico encontrado para esta data no repositório.")
+                else:
+                    cols_fotos = st.columns(min(len(imagens), 4))
+                    for i, img_content in enumerate(imagens):
+                        with cols_fotos[i % 4]:
+                            st.image(img_content.download_url, caption=img_content.name, use_container_width=True)
+            except Exception:
+                st.info("Nenhuma pasta de fotos encontrada para esta data no repositório.")
+        else:
+            st.warning("Não foi possível conectar ao GitHub para buscar as fotos.")
+
+    with st.container(border=True):
+        st.subheader("Mapa de Atividades de NATIVOS (Biomassa por Condição)")
+        df_coords = df_ictio_periodo.copy()
+        df_coords = df_coords[df_coords['Distribuição'] == 'Nativo']
+        df_coords.rename(columns={'Destino': 'Condição'}, inplace=True)
+        
+        def clean_coord(coord_str):
+            if not isinstance(coord_str, str) or coord_str.strip() == '':
+                return None
+            
+            numbers_only = re.sub(r'[^\d-]', '', coord_str)
+            
+            if not numbers_only or numbers_only == '-':
+                return None
+            
+            if numbers_only.startswith('-'):
+                if len(numbers_only) > 3:
+                    return pd.to_numeric(numbers_only[:3] + '.' + numbers_only[3:], errors='coerce')
+            elif len(numbers_only) > 2:
+                return pd.to_numeric(numbers_only[:2] + '.' + numbers_only[2:], errors='coerce')
+            
+            return pd.to_numeric(numbers_only, errors='coerce')
+
+        df_coords['Latitude_num'] = df_coords['Latitude'].apply(clean_coord)
+        df_coords['Longitude_num'] = df_coords['Longitude'].apply(clean_coord)
+        
+        df_mapa = df_coords.groupby(['Ponto_Amostral', 'Latitude_num', 'Longitude_num', 'Condição'])['Biomassa_(g)'].sum().reset_index()
+        df_mapa.dropna(subset=['Latitude_num', 'Longitude_num'], inplace=True)
+        
+        if not df_mapa.empty:
+            center_lat = df_mapa['Latitude_num'].mean()
+            center_lon = df_mapa['Longitude_num'].mean()
+            
+            fig_mapa = px.scatter_mapbox(df_mapa, lat="Latitude_num", lon="Longitude_num", 
+                                         size="Biomassa_(g)", 
+                                         color="Condição", 
+                                         hover_name="Ponto_Amostral",
+                                         color_discrete_map=CHART_COLOR_PALETTE,
+                                         hover_data={"Biomassa_(g)": ':.2f', "Latitude_num": False, "Longitude_num": False},
+                                         mapbox_style="satellite-streets", 
+                                         center=dict(lat=center_lat, lon=center_lon), 
+                                         zoom=15,
+                                         size_max=20)
+                                         
+            fig_mapa.update_layout(height=500, margin={"r":0,"t":40,"l":0,"b":0}, legend_title_text='Condição')
+            st.plotly_chart(fig_mapa, use_container_width=True)
+        else:
+            st.warning("Nenhum dado de coordenada de NATIVOS encontrado com os filtros selecionados.")
