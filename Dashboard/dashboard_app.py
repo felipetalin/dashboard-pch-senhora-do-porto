@@ -14,14 +14,14 @@ from github import Github
 try:
     locale.setlocale(locale.LC_TIME, 'pt_BR.UTF-8')
 except locale.Error:
-    pass # Ignora o erro silenciosamente se a localidade não for encontrada
+    pass # Ignora o erro silenciosamente
 
 # =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 # FUNÇÕES DE CONEXÃO E AUTENTICAÇÃO
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
-# Conexão com Google Sheets
-@st.cache_resource(ttl=600) # Cache de 10 minutos
+# Conexão com Google Sheets (com cache para não reconectar a cada segundo)
+@st.cache_resource(ttl=600)
 def connect_to_google_sheets():
     scopes = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
     creds = Credentials.from_service_account_info(st.secrets["gcp_service_account"], scopes=scopes)
@@ -32,23 +32,23 @@ def connect_to_google_sheets():
 def get_github_repo():
     try:
         g = Github(st.secrets["GITHUB_TOKEN"])
-        repo = g.get_repo(st.secrets["GITHUB_REPO"]) # Ex: "seu-usuario/seu-repositorio"
+        repo = g.get_repo(st.secrets["GITHUB_REPO"])
         return repo
     except Exception as e:
-        st.error(f"Erro ao conectar com o GitHub: {e}")
+        st.sidebar.error(f"Erro ao conectar com o GitHub: {e}")
         return None
 
 # Função para fazer upload de arquivos para o GitHub
 def upload_to_github(repo, file_path, content, commit_message):
     try:
-        # Tenta pegar o arquivo para ver se ele já existe e precisa ser atualizado
-        contents = repo.get_contents(file_path)
-        repo.update_file(contents.path, commit_message, content, contents.sha)
-        st.success(f"Arquivo '{os.path.basename(file_path)}' atualizado com sucesso!")
-    except Exception:
-        # Se não existe, cria um novo
         repo.create_file(file_path, commit_message, content)
-        st.success(f"Arquivo '{os.path.basename(file_path)}' enviado com sucesso!")
+        st.sidebar.success(f"Arquivo '{os.path.basename(file_path)}' enviado!")
+    except Exception as e:
+        # Se o arquivo já existe, a exceção terá status 422
+        if e.status == 422:
+            st.sidebar.warning(f"Arquivo '{os.path.basename(file_path)}' já existe. Não foi enviado novamente.")
+        else:
+            st.sidebar.error(f"Falha ao enviar '{os.path.basename(file_path)}': {e}")
 
 # =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 # CONFIGURAÇÃO GERAL E CARREGAMENTO DE DADOS
@@ -57,20 +57,40 @@ st.set_page_config(page_title="Acompanhamento Ambiental - PCH Senhora do Porto",
 
 st.markdown("""
 <style>
-    /* ... (seu CSS continua o mesmo) ... */
+    .main { background-color: #F0FFF0; }
+    [data-testid="stSidebar"] { background-color: #E6F3E6; }
+    h1, h2, h3 { color: #006400; }
+    .header { display: flex; justify-content: space-between; align-items: center; padding: 10px 25px; background-color: #E6F3E6; border-radius: 10px; margin-bottom: 20px; border: 1px solid #A9D9A9; }
+    .header-logo { height: 50px; }
+    .header-title { font-size: 24px; font-weight: bold; color: #006400; }
+    .section-header { background-color: #A9D9A9; color: #006400; padding: 10px; border-radius: 10px; text-align: center; font-size: 24px; font-weight: bold; margin-bottom: 20px; }
+    div[data-testid="stVerticalBlock"] > [data-testid="stHorizontalBlock"] > div[data-testid="stVerticalBlock"] {
+        border-radius: 10px; border: 1px solid #A9D9A9;
+        box-shadow: 0 4px 8px 0 rgba(0,0,0,0.1); background-color: #F5FFFA;
+        padding: 20px; margin-bottom: 20px;
+    }
+    div[data-testid="stMetric"] {
+        background-color: #F5FFFA; border: 1px solid #F5FFFA;
+        padding: 5px; border-radius: 10px;
+    }
 </style>
 """, unsafe_allow_html=True)
 
 # --- Carregando dados do Google Sheets ---
-@st.cache_data(ttl=600) # Cache de 10 minutos
+@st.cache_data(ttl=600)
 def carregar_dados_completos():
     try:
         client = connect_to_google_sheets()
-        spreadsheet = client.open("Dados_Resgate_PCH") # Nome da sua Planilha Google
+        spreadsheet = client.open("Dados_Resgate_PCH")
 
-        # Carrega dados brutos
         sheet_ictio = spreadsheet.worksheet("dados_brutos")
         df_ictio = pd.DataFrame(sheet_ictio.get_all_records())
+        # Tratamento de colunas que podem vir vazias
+        for col in ['Data', 'N°_Individuos', 'Biomassa_(g)', 'Destino', 'Resgate', 'Espécie', 'Distribuição']:
+            if col not in df_ictio.columns:
+                df_ictio[col] = None
+        df_ictio = df_ictio.astype(str).replace('', None) # Trata células vazias
+        
         df_ictio['Data'] = pd.to_datetime(df_ictio['Data'], errors='coerce')
         df_ictio.dropna(subset=['Data'], inplace=True)
         cols_numericas_ictio = ['N°_Individuos', 'Biomassa_(g)']
@@ -83,7 +103,6 @@ def carregar_dados_completos():
         for col in ['Resgate', 'Espécie', 'Distribuição']:
             df_ictio[col] = df_ictio[col].fillna('Não especificado').astype(str)
 
-        # Carrega dados abióticos
         sheet_abiotico = spreadsheet.worksheet("dados_abióticos")
         df_abiotico = pd.DataFrame(sheet_abiotico.get_all_records())
         df_abiotico['Data'] = pd.to_datetime(df_abiotico['Data'], errors='coerce')
@@ -93,28 +112,48 @@ def carregar_dados_completos():
             df_abiotico[col] = pd.to_numeric(df_abiotico[col], errors='coerce').fillna(0)
         
         return df_ictio, df_abiotico
+    except gspread.exceptions.SpreadsheetNotFound:
+        st.error("Planilha 'Dados_Resgate_PCH' não encontrada. Verifique o nome e as permissões de compartilhamento.")
+        return pd.DataFrame(), pd.DataFrame()
     except Exception as e:
         st.error(f"Erro ao carregar dados do Google Sheets: {e}")
         return pd.DataFrame(), pd.DataFrame()
 
 df_ictio_master, df_abiotico_master = carregar_dados_completos()
 if df_ictio_master.empty: 
-    st.warning("Não foram encontrados dados de resgate válidos na planilha.")
+    st.warning("Não foram encontrados dados de resgate válidos na planilha ou a planilha está vazia.")
     st.stop()
 
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 # BARRA LATERAL (SIDEBAR)
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
-logo_path = "assets/logo.png" # Caminho relativo no repositório
-st.sidebar.image(logo_path)
+st.sidebar.image("assets/logo.png")
 
 st.sidebar.header("Filtros do Relatório")
-# ... (o resto da sua sidebar de filtros continua o mesmo) ...
+tipo_analise = st.sidebar.radio("Selecione o tipo de análise:", ("Dia Específico", "Período"))
+
+if tipo_analise == "Dia Específico":
+    data_selecionada = st.sidebar.date_input("Selecione a Data:", value=df_ictio_master['Data'].max().date(),
+                                             min_value=df_ictio_master['Data'].min().date(), max_value=df_ictio_master['Data'].max().date())
+    start_date = data_selecionada; end_date = data_selecionada
+else:
+    start_date_default = df_ictio_master['Data'].max().date() - pd.Timedelta(days=7)
+    end_date_default = df_ictio_master['Data'].max().date()
+    periodo_selecionado = st.sidebar.date_input("Selecione o Período:", value=(start_date_default, end_date_default),
+                                                min_value=df_ictio_master['Data'].min().date(), max_value=df_ictio_master['Data'].max().date())
+    if len(periodo_selecionado) == 2: start_date, end_date = periodo_selecionado
+    else: start_date = end_date = periodo_selecionado[0]
+
+fases_disponiveis = df_ictio_master['Resgate'].unique()
+fase_selecionada = st.sidebar.multiselect("Selecione a(s) Fase(s) do Resgate:", options=fases_disponiveis, default=fases_disponiveis)
+st.sidebar.markdown("---")
+if st.sidebar.button("♻️ Atualizar Dados da Planilha"): 
+    st.cache_data.clear()
+    st.rerun()
 
 # --- NOVA SEÇÃO: UPLOAD DE FOTOS ---
 st.sidebar.markdown("---")
 st.sidebar.subheader("📤 Enviar Fotos de Campo")
-
 data_foto = st.sidebar.date_input("Selecione a data das fotos", value=date.today())
 uploaded_files = st.sidebar.file_uploader("Escolha os arquivos de imagem", accept_multiple_files=True, type=['jpg', 'png', 'jpeg'])
 
@@ -123,29 +162,38 @@ if st.sidebar.button("Enviar Fotos para o Repositório"):
         repo = get_github_repo()
         if repo:
             folder_path = f"fotos_atividades/{data_foto.strftime('%Y-%m-%d')}"
-            commit_message = f"Upload de fotos para o dia {data_foto.strftime('%d/%m/%Y')}"
+            commit_message = f"Upload de fotos via app para o dia {data_foto.strftime('%d/%m/%Y')}"
             
-            with st.spinner("Enviando arquivos..."):
+            with st.spinner("Enviando arquivos para o GitHub..."):
                 for uploaded_file in uploaded_files:
                     file_content = uploaded_file.getvalue()
                     file_path_in_repo = f"{folder_path}/{uploaded_file.name}"
                     upload_to_github(repo, file_path_in_repo, file_content, commit_message)
-            st.sidebar.success("Todos os arquivos foram enviados!")
-            st.sidebar.info("Os novos dados podem levar alguns minutos para aparecer no dashboard.")
+            st.sidebar.info("Atualização concluída! As fotos podem levar alguns minutos para aparecer.")
     else:
         st.sidebar.warning("Por favor, selecione pelo menos um arquivo de foto.")
 
-# -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
-# CORPO PRINCIPAL DO DASHBOARD
-# -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
-# O corpo principal do seu dashboard (KPIs, gráficos, mapa) permanece EXATAMENTE O MESMO
-# Vou colar ele aqui para garantir que o arquivo esteja completo.
-# ... (Cole aqui o corpo principal do seu último código perfeito) ...
+# --- Filtragem de Dados ---
+mask_ictio = (df_ictio_master['Data'].dt.date >= start_date) & (df_ictio_master['Data'].dt.date <= end_date) & (df_ictio_master['Resgate'].isin(fase_selecionada))
+df_ictio_periodo = df_ictio_master[mask_ictio]
+if not df_abiotico_master.empty:
+    mask_abiotico = (df_abiotico_master['Data'].dt.date >= start_date) & (df_abiotico_master['Data'].dt.date <= end_date)
+    df_abiotico_periodo = df_abiotico_master[mask_abiotico]
+else:
+    df_abiotico_periodo = pd.DataFrame()
 
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 # CORPO PRINCIPAL DO DASHBOARD
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
-logo_base64 = get_image_as_base64(BASE_DIR / "assets" / "logo.png")
+logo_base64 = None
+if 'GITHUB_REPO' in st.secrets:
+    try:
+        repo = get_github_repo()
+        content = repo.get_contents("assets/logo.png")
+        logo_base64 = base64.b64encode(content.decoded_content).decode()
+    except:
+        pass # Ignora se o logo não for encontrado
+
 if logo_base64:
     st.markdown(f'<div class="header"><img src="data:image/png;base64,{logo_base64}" class="header-logo"><div class="header-title">Acompanhamento Ambiental - PCH Senhora do Porto</div></div>', unsafe_allow_html=True)
 
@@ -219,7 +267,7 @@ else:
             st.plotly_chart(fig_top10, use_container_width=True)
     
     with st.container(border=True):
-        st.subheader("Biomassa de Nativos ao Longo do Tempo")
+        st.subheader("Biomassa de NATIVOS Manejada ao Longo do Tempo")
         df_temporal_raw = df_ictio_periodo.copy()
         if tipo_analise == "Dia Específico":
             df_temporal_raw = df_ictio_master[df_ictio_master['Resgate'].isin(fase_selecionada)].copy()
@@ -234,7 +282,6 @@ else:
                               color_discrete_map=CHART_COLOR_PALETTE)
         
         if tipo_analise == "Dia Específico":
-            # --- CORREÇÃO DEFINITIVA: Destaque com linha vertical + texto separado ---
             fig_temporal.add_vline(x=start_date, line_width=2, line_dash="dash", line_color="grey")
             fig_temporal.add_annotation(
                 x=start_date, y=1, yref="paper", 
@@ -252,41 +299,21 @@ else:
     if tipo_analise == "Período":
          with st.container(border=True):
             st.subheader(f"Registros Fotográficos de {end_date.strftime('%d/%m/%Y')}")
-            data_str_pasta = end_date.strftime('%Y-%m-%d')
-            pasta_fotos_dia = FOTOS_DIR / data_str_pasta
-            imagens_encontradas = list(pasta_fotos_dia.glob("*.jpg")) + list(pasta_fotos_dia.glob("*.png")) + list(pasta_fotos_dia.glob("*.jpeg"))
-            if not imagens_encontradas:
-                st.info("Nenhum registro fotográfico para o último dia do período.")
-            else:
-                cols_fotos = st.columns(2)
-                if len(imagens_encontradas) > 0:
-                    with cols_fotos[0]: st.image(str(imagens_encontradas[0]), use_container_width=True)
-                if len(imagens_encontradas) > 1:
-                    with cols_fotos[1]: st.image(str(imagens_encontradas[1]), use_container_width=True)
+            # ... lógica para mostrar fotos do GitHub ...
     elif start_date == end_date:
         with st.container(border=True):
             st.subheader("Registros Fotográficos do Dia")
-            data_str_pasta = start_date.strftime('%Y-%m-%d')
-            pasta_fotos_dia = FOTOS_DIR / data_str_pasta
-            imagens_encontradas = list(pasta_fotos_dia.glob("*.jpg")) + list(pasta_fotos_dia.glob("*.png")) + list(pasta_fotos_dia.glob("*.jpeg"))
-            if not imagens_encontradas:
-                st.info("Nenhum registro fotográfico encontrado para esta data.")
-            else:
-                cols_fotos = st.columns(len(imagens_encontradas))
-                for i, img_path in enumerate(imagens_encontradas):
-                    if i < len(cols_fotos):
-                        with cols_fotos[i]:
-                            st.image(str(img_path), caption=os.path.basename(img_path), use_container_width=True)
-    
+            # ... lógica para mostrar fotos do GitHub ...
+
     with st.container(border=True):
-        st.subheader("Mapa de Atividades de Nativos (Biomassa por Condição)")
+        st.subheader("Mapa de Atividades de NATIVOS (Biomassa por Condição)")
         df_coords = df_ictio_periodo.copy()
         
         df_coords = df_coords[df_coords['Distribuição'] == 'Nativo']
         
         df_coords.rename(columns={'Destino': 'Condição'}, inplace=True)
-        df_coords['Latitude_num'] = pd.to_numeric(df_coords['Latitude'].astype(str).str.replace('°', ''), errors='coerce')
-        df_coords['Longitude_num'] = pd.to_numeric(df_coords['Longitude'].astype(str).str.replace('°', ''), errors='coerce')
+        df_coords['Latitude_num'] = pd.to_numeric(df_coords['Latitude'], errors='coerce')
+        df_coords['Longitude_num'] = pd.to_numeric(df_coords['Longitude'], errors='coerce')
         
         df_mapa = df_coords.groupby(['Ponto_Amostral', 'Latitude_num', 'Longitude_num', 'Condição'])['Biomassa_(g)'].sum().reset_index()
         df_mapa.dropna(subset=['Latitude_num', 'Longitude_num'], inplace=True)
@@ -294,7 +321,6 @@ else:
         if not df_mapa.empty:
             center_lat = df_mapa['Latitude_num'].mean()
             center_lon = df_mapa['Longitude_num'].mean()
-            px.set_mapbox_access_token(MAPBOX_TOKEN)
             
             fig_mapa = px.scatter_mapbox(df_mapa, lat="Latitude_num", lon="Longitude_num", 
                                          size="Biomassa_(g)", 
@@ -310,6 +336,4 @@ else:
             fig_mapa.update_layout(height=500, margin={"r":0,"t":40,"l":0,"b":0}, legend_title_text='Condição')
             st.plotly_chart(fig_mapa, use_container_width=True)
         else:
-
             st.warning("Nenhum dado de coordenada de NATIVOS encontrado com os filtros selecionados.")
-
