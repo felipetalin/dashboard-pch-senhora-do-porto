@@ -330,13 +330,22 @@ else:
         
         # --- CORREÇÃO DEFINITIVA DO MAPA: Função robusta para limpar coordenadas ---
         def clean_coord(coord_str):
-            if not isinstance(coord_str, str):
+            if not isinstance(coord_str, str) or coord_str == 'None':
                 return None
-            # Remove todos os pontos e depois substitui a última vírgula por um ponto decimal
+            
+            # Remove todos os pontos
             cleaned_str = coord_str.replace('.', '')
+            
+            # Se ainda houver uma vírgula, substitui pela ponto decimal
             if ',' in cleaned_str:
-                parts = cleaned_str.rsplit(',', 1)
-                cleaned_str = '.'.join(parts)
+                cleaned_str = cleaned_str.replace(',', '.')
+            # Lógica para o formato -19006695 -> -19.006695
+            elif len(cleaned_str) > 5 and '.' not in cleaned_str: 
+                 if cleaned_str.startswith('-'):
+                     cleaned_str = cleaned_str[:3] + '.' + cleaned_str[3:]
+                 else:
+                     cleaned_str = cleaned_str[:2] + '.' + cleaned_str[2:]
+            
             return pd.to_numeric(cleaned_str, errors='coerce')
 
         df_coords['Latitude_num'] = df_coords['Latitude'].apply(clean_coord)
@@ -364,4 +373,3 @@ else:
             st.plotly_chart(fig_mapa, use_container_width=True)
         else:
             st.warning("Nenhum dado de coordenada de NATIVOS encontrado com os filtros selecionados.")
-
