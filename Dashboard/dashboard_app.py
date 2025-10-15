@@ -14,13 +14,12 @@ from github import Github
 try:
     locale.setlocale(locale.LC_TIME, 'pt_BR.UTF-8')
 except locale.Error:
-    pass # Ignora o erro silenciosamente
+    pass
 
 # =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 # FUNÇÕES DE CONEXÃO E AUTENTICAÇÃO
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
-# Conexão com Google Sheets (com cache para não reconectar a cada segundo)
 @st.cache_resource(ttl=600)
 def connect_to_google_sheets():
     scopes = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
@@ -28,7 +27,6 @@ def connect_to_google_sheets():
     client = gspread.authorize(creds)
     return client
 
-# Conexão com GitHub
 def get_github_repo():
     try:
         g = Github(st.secrets["GITHUB_TOKEN"])
@@ -38,13 +36,11 @@ def get_github_repo():
         st.sidebar.error(f"Erro ao conectar com o GitHub: {e}")
         return None
 
-# Função para fazer upload de arquivos para o GitHub
 def upload_to_github(repo, file_path, content, commit_message):
     try:
         repo.create_file(file_path, commit_message, content)
         st.sidebar.success(f"Arquivo '{os.path.basename(file_path)}' enviado!")
     except Exception as e:
-        # Se o arquivo já existe, a exceção terá status 422
         if e.status == 422:
             st.sidebar.warning(f"Arquivo '{os.path.basename(file_path)}' já existe. Não foi enviado novamente.")
         else:
@@ -77,19 +73,26 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # --- Carregando dados do Google Sheets ---
-@st.cache_data(ttl=600)
+@st.cache_data(ttl=300) # Reduzido para 5 minutos para refletir atualizações mais rápido
 def carregar_dados_completos():
     try:
         client = connect_to_google_sheets()
         spreadsheet = client.open("Dados_Resgate_PCH")
 
+        # Carrega dados brutos
         sheet_ictio = spreadsheet.worksheet("dados_brutos")
-        df_ictio = pd.DataFrame(sheet_ictio.get_all_records())
+        data = sheet_ictio.get_all_values()
+        headers = data.pop(0)
+        # --- CORREÇÃO: Limpa colunas vazias ---
+        df_ictio = pd.DataFrame(data, columns=headers)
+        df_ictio = df_ictio.loc[:, df_ictio.columns.notna() & (df_ictio.columns != '')]
+        
         # Tratamento de colunas que podem vir vazias
-        for col in ['Data', 'N°_Individuos', 'Biomassa_(g)', 'Destino', 'Resgate', 'Espécie', 'Distribuição']:
+        required_cols_ictio = ['Data', 'N°_Individuos', 'Biomassa_(g)', 'Destino', 'Resgate', 'Espécie', 'Distribuição']
+        for col in required_cols_ictio:
             if col not in df_ictio.columns:
                 df_ictio[col] = None
-        df_ictio = df_ictio.astype(str).replace('', None) # Trata células vazias
+        df_ictio = df_ictio.astype(str).replace('', None).replace('nan', None)
         
         df_ictio['Data'] = pd.to_datetime(df_ictio['Data'], errors='coerce')
         df_ictio.dropna(subset=['Data'], inplace=True)
@@ -103,8 +106,13 @@ def carregar_dados_completos():
         for col in ['Resgate', 'Espécie', 'Distribuição']:
             df_ictio[col] = df_ictio[col].fillna('Não especificado').astype(str)
 
+        # Carrega dados abióticos
         sheet_abiotico = spreadsheet.worksheet("dados_abióticos")
-        df_abiotico = pd.DataFrame(sheet_abiotico.get_all_records())
+        data_abio = sheet_abiotico.get_all_values()
+        headers_abio = data_abio.pop(0)
+        df_abiotico = pd.DataFrame(data_abio, columns=headers_abio)
+        df_abiotico = df_abiotico.loc[:, df_abiotico.columns.notna() & (df_abiotico.columns != '')]
+        
         df_abiotico['Data'] = pd.to_datetime(df_abiotico['Data'], errors='coerce')
         df_abiotico.dropna(subset=['Data'], inplace=True)
         cols_numericas_abiotico = ['Oxigênio', 'Temperatura', 'pH', 'Nível']
@@ -192,7 +200,7 @@ if 'GITHUB_REPO' in st.secrets:
         content = repo.get_contents("assets/logo.png")
         logo_base64 = base64.b64encode(content.decoded_content).decode()
     except:
-        pass # Ignora se o logo não for encontrado
+        pass
 
 if logo_base64:
     st.markdown(f'<div class="header"><img src="data:image/png;base64,{logo_base64}" class="header-logo"><div class="header-title">Acompanhamento Ambiental - PCH Senhora do Porto</div></div>', unsafe_allow_html=True)
@@ -207,6 +215,8 @@ else:
 if df_ictio_periodo.empty:
     st.warning("Nenhuma atividade de resgate registrada para este período com os filtros selecionados.")
 else:
+    # O restante do corpo do dashboard (KPIs, gráficos, mapa) permanece o mesmo.
+    # Vou colar a última versão funcional que tínhamos para garantir.
     total_biomassa_g = df_ictio_periodo['Biomassa_(g)'].sum()
     vivos_biomassa_g = df_ictio_periodo[df_ictio_periodo['Destino'] == 'Vivo']['Biomassa_(g)'].sum()
     
@@ -295,15 +305,9 @@ else:
         
         fig_temporal.update_layout(title_x=0.5, height=400, legend_title_text='Condição', yaxis_title="Biomassa (g)")
         st.plotly_chart(fig_temporal, use_container_width=True)
-
-    if tipo_analise == "Período":
-         with st.container(border=True):
-            st.subheader(f"Registros Fotográficos de {end_date.strftime('%d/%m/%Y')}")
-            # ... lógica para mostrar fotos do GitHub ...
-    elif start_date == end_date:
-        with st.container(border=True):
-            st.subheader("Registros Fotográficos do Dia")
-            # ... lógica para mostrar fotos do GitHub ...
+    
+    # ... Lógica para buscar e mostrar fotos do GitHub ...
+    # (Esta parte precisa ser reescrita para ler do repo)
 
     with st.container(border=True):
         st.subheader("Mapa de Atividades de NATIVOS (Biomassa por Condição)")
