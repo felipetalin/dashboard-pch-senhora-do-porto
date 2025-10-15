@@ -147,7 +147,6 @@ if df_ictio_master.empty:
 # BARRA LATERAL (SIDEBAR)
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 if logo_base64:
-    # CORREÇÃO: Usando a imagem carregada da nuvem
     st.sidebar.image(f"data:image/png;base64,{logo_base64}")
 
 st.sidebar.header("Filtros do Relatório")
@@ -218,6 +217,7 @@ else:
 if df_ictio_periodo.empty:
     st.warning("Nenhuma atividade de resgate registrada para este período com os filtros selecionados.")
 else:
+    # O restante do corpo do dashboard (KPIs, gráficos, mapa)
     total_biomassa_g = df_ictio_periodo['Biomassa_(g)'].sum()
     vivos_biomassa_g = df_ictio_periodo[df_ictio_periodo['Destino'] == 'Vivo']['Biomassa_(g)'].sum()
     
@@ -331,6 +331,7 @@ else:
         df_coords = df_coords[df_coords['Distribuição'] == 'Nativo']
         
         df_coords.rename(columns={'Destino': 'Condição'}, inplace=True)
+        # --- CORREÇÃO DO MAPA: Assegura que Latitude e Longitude são numéricas ---
         df_coords['Latitude_num'] = pd.to_numeric(df_coords['Latitude'], errors='coerce')
         df_coords['Longitude_num'] = pd.to_numeric(df_coords['Longitude'], errors='coerce')
         
