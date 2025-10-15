@@ -27,6 +27,7 @@ def connect_to_google_sheets():
     client = gspread.authorize(creds)
     return client
 
+@st.cache_resource
 def get_github_repo():
     try:
         g = Github(st.secrets["GITHUB_TOKEN"])
@@ -72,27 +73,24 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# --- Carregando dados do Google Sheets ---
-@st.cache_data(ttl=300) # Reduzido para 5 minutos para refletir atualizações mais rápido
+@st.cache_data(ttl=300)
 def carregar_dados_completos():
     try:
         client = connect_to_google_sheets()
         spreadsheet = client.open("Dados_Resgate_PCH")
 
-        # Carrega dados brutos
         sheet_ictio = spreadsheet.worksheet("dados_brutos")
         data = sheet_ictio.get_all_values()
-        headers = data.pop(0)
-        # --- CORREÇÃO: Limpa colunas vazias ---
+        headers = data.pop(0) if data else []
         df_ictio = pd.DataFrame(data, columns=headers)
         df_ictio = df_ictio.loc[:, df_ictio.columns.notna() & (df_ictio.columns != '')]
         
-        # Tratamento de colunas que podem vir vazias
-        required_cols_ictio = ['Data', 'N°_Individuos', 'Biomassa_(g)', 'Destino', 'Resgate', 'Espécie', 'Distribuição']
+        required_cols_ictio = ['Data', 'N°_Individuos', 'Biomassa_(g)', 'Destino', 'Resgate', 'Espécie', 'Distribuição', 'Latitude', 'Longitude', 'Ponto_Amostral']
         for col in required_cols_ictio:
             if col not in df_ictio.columns:
                 df_ictio[col] = None
-        df_ictio = df_ictio.astype(str).replace('', None).replace('nan', None)
+        
+        df_ictio = df_ictio.astype(str).replace('', None).replace('nan', None).replace('<NA>', None)
         
         df_ictio['Data'] = pd.to_datetime(df_ictio['Data'], errors='coerce')
         df_ictio.dropna(subset=['Data'], inplace=True)
@@ -106,10 +104,9 @@ def carregar_dados_completos():
         for col in ['Resgate', 'Espécie', 'Distribuição']:
             df_ictio[col] = df_ictio[col].fillna('Não especificado').astype(str)
 
-        # Carrega dados abióticos
         sheet_abiotico = spreadsheet.worksheet("dados_abióticos")
         data_abio = sheet_abiotico.get_all_values()
-        headers_abio = data_abio.pop(0)
+        headers_abio = data_abio.pop(0) if data_abio else []
         df_abiotico = pd.DataFrame(data_abio, columns=headers_abio)
         df_abiotico = df_abiotico.loc[:, df_abiotico.columns.notna() & (df_abiotico.columns != '')]
         
@@ -135,6 +132,7 @@ if df_ictio_master.empty:
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 # BARRA LATERAL (SIDEBAR)
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+# --- CORREÇÃO DO CAMINHO DO LOGO ---
 st.sidebar.image("assets/logo.png")
 
 st.sidebar.header("Filtros do Relatório")
@@ -159,7 +157,6 @@ if st.sidebar.button("♻️ Atualizar Dados da Planilha"):
     st.cache_data.clear()
     st.rerun()
 
-# --- NOVA SEÇÃO: UPLOAD DE FOTOS ---
 st.sidebar.markdown("---")
 st.sidebar.subheader("📤 Enviar Fotos de Campo")
 data_foto = st.sidebar.date_input("Selecione a data das fotos", value=date.today())
@@ -193,14 +190,16 @@ else:
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 # CORPO PRINCIPAL DO DASHBOARD
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
-logo_base64 = None
-if 'GITHUB_REPO' in st.secrets:
+@st.cache_data(ttl=300)
+def get_base64_from_github(repo, file_path):
     try:
-        repo = get_github_repo()
-        content = repo.get_contents("assets/logo.png")
-        logo_base64 = base64.b64encode(content.decoded_content).decode()
+        content = repo.get_contents(file_path)
+        return base64.b64encode(content.decoded_content).decode()
     except:
-        pass
+        return None
+
+repo = get_github_repo()
+logo_base64 = get_base64_from_github(repo, "assets/logo.png") if repo else None
 
 if logo_base64:
     st.markdown(f'<div class="header"><img src="data:image/png;base64,{logo_base64}" class="header-logo"><div class="header-title">Acompanhamento Ambiental - PCH Senhora do Porto</div></div>', unsafe_allow_html=True)
@@ -216,7 +215,6 @@ if df_ictio_periodo.empty:
     st.warning("Nenhuma atividade de resgate registrada para este período com os filtros selecionados.")
 else:
     # O restante do corpo do dashboard (KPIs, gráficos, mapa) permanece o mesmo.
-    # Vou colar a última versão funcional que tínhamos para garantir.
     total_biomassa_g = df_ictio_periodo['Biomassa_(g)'].sum()
     vivos_biomassa_g = df_ictio_periodo[df_ictio_periodo['Destino'] == 'Vivo']['Biomassa_(g)'].sum()
     
@@ -293,21 +291,36 @@ else:
         
         if tipo_analise == "Dia Específico":
             fig_temporal.add_vline(x=start_date, line_width=2, line_dash="dash", line_color="grey")
-            fig_temporal.add_annotation(
-                x=start_date, y=1, yref="paper", 
-                text="Dia Selecionado", showarrow=False,
-                font=dict(color="grey"), bgcolor="rgba(255,255,255,0.5)",
-                xshift=10, yshift=10
-            )
+            fig_temporal.add_annotation(x=start_date, y=1, yref="paper", text="Dia Selecionado", showarrow=False, font=dict(color="grey"), bgcolor="rgba(255,255,255,0.5)", xshift=10, yshift=10)
             fig_temporal.update_xaxes(tickformat='%d %b %Y') 
         else:
             fig_temporal.update_xaxes(tickmode='linear', dtick='D1', tickformat='%d/%m')
         
         fig_temporal.update_layout(title_x=0.5, height=400, legend_title_text='Condição', yaxis_title="Biomassa (g)")
         st.plotly_chart(fig_temporal, use_container_width=True)
-    
-    # ... Lógica para buscar e mostrar fotos do GitHub ...
-    # (Esta parte precisa ser reescrita para ler do repo)
+
+    # --- NOVA LÓGICA PARA EXIBIR FOTOS DO GITHUB ---
+    with st.container(border=True):
+        data_para_fotos = end_date if tipo_analise == "Período" else start_date
+        st.subheader(f"Registros Fotográficos de {data_para_fotos.strftime('%d/%m/%Y')}")
+        
+        if repo:
+            try:
+                path_fotos = f"fotos_atividades/{data_para_fotos.strftime('%Y-%m-%d')}"
+                contents = repo.get_contents(path_fotos)
+                imagens = [file for file in contents if file.name.lower().endswith(('.png', '.jpg', '.jpeg'))]
+                
+                if not imagens:
+                    st.info("Nenhum registro fotográfico encontrado para esta data no repositório.")
+                else:
+                    cols_fotos = st.columns(min(len(imagens), 4))
+                    for i, img_content in enumerate(imagens):
+                        with cols_fotos[i % 4]:
+                            st.image(img_content.download_url, caption=img_content.name, use_container_width=True)
+            except Exception:
+                st.info("Nenhuma pasta de fotos encontrada para esta data no repositório.")
+        else:
+            st.warning("Não foi possível conectar ao GitHub para buscar as fotos.")
 
     with st.container(border=True):
         st.subheader("Mapa de Atividades de NATIVOS (Biomassa por Condição)")
