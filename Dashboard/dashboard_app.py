@@ -215,6 +215,7 @@ else:
 if df_ictio_periodo.empty:
     st.warning("Nenhuma atividade de resgate registrada para este período com os filtros selecionados.")
 else:
+    # O restante do corpo do dashboard (KPIs, gráficos, mapa)
     total_biomassa_g = df_ictio_periodo['Biomassa_(g)'].sum()
     vivos_biomassa_g = df_ictio_periodo[df_ictio_periodo['Destino'] == 'Vivo']['Biomassa_(g)'].sum()
     
@@ -324,18 +325,22 @@ else:
     with st.container(border=True):
         st.subheader("Mapa de Atividades de NATIVOS (Biomassa por Condição)")
         df_coords = df_ictio_periodo.copy()
-        
         df_coords = df_coords[df_coords['Distribuição'] == 'Nativo']
-        
         df_coords.rename(columns={'Destino': 'Condição'}, inplace=True)
         
-        # --- CORREÇÃO DEFINITIVA DO MAPA ---
-        # 1. Converte para string para poder usar o .str.replace
-        # 2. Remove todos os pontos (.)
-        # 3. Substitui a vírgula (,) por ponto (.) para o decimal
-        # 4. Converte para número, tratando erros
-        df_coords['Latitude_num'] = pd.to_numeric(df_coords['Latitude'].astype(str).str.replace('.', '', regex=False).str.replace(',', '.', regex=False), errors='coerce')
-        df_coords['Longitude_num'] = pd.to_numeric(df_coords['Longitude'].astype(str).str.replace('.', '', regex=False).str.replace(',', '.', regex=False), errors='coerce')
+        # --- CORREÇÃO DEFINITIVA DO MAPA: Função robusta para limpar coordenadas ---
+        def clean_coord(coord_str):
+            if not isinstance(coord_str, str):
+                return None
+            # Remove todos os pontos e depois substitui a última vírgula por um ponto decimal
+            cleaned_str = coord_str.replace('.', '')
+            if ',' in cleaned_str:
+                parts = cleaned_str.rsplit(',', 1)
+                cleaned_str = '.'.join(parts)
+            return pd.to_numeric(cleaned_str, errors='coerce')
+
+        df_coords['Latitude_num'] = df_coords['Latitude'].apply(clean_coord)
+        df_coords['Longitude_num'] = df_coords['Longitude'].apply(clean_coord)
         
         df_mapa = df_coords.groupby(['Ponto_Amostral', 'Latitude_num', 'Longitude_num', 'Condição'])['Biomassa_(g)'].sum().reset_index()
         df_mapa.dropna(subset=['Latitude_num', 'Longitude_num'], inplace=True)
@@ -359,3 +364,4 @@ else:
             st.plotly_chart(fig_mapa, use_container_width=True)
         else:
             st.warning("Nenhum dado de coordenada de NATIVOS encontrado com os filtros selecionados.")
+
