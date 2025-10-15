@@ -124,7 +124,19 @@ def carregar_dados_completos():
         st.error(f"Erro ao carregar dados do Google Sheets: {e}")
         return pd.DataFrame(), pd.DataFrame()
 
+@st.cache_data
+def get_base64_from_github(_repo, file_path):
+    try:
+        content = _repo.get_contents(file_path)
+        return base64.b64encode(content.decoded_content).decode()
+    except Exception:
+        return None
+
+# --- CARREGAMENTO INICIAL DOS DADOS E ATIVOS ---
+repo = get_github_repo()
+logo_base64 = get_base64_from_github(repo, "assets/logo.png") if repo else None
 df_ictio_master, df_abiotico_master = carregar_dados_completos()
+
 if df_ictio_master.empty: 
     st.warning("Não foram encontrados dados de resgate válidos na planilha ou a planilha está vazia.")
     st.stop()
@@ -132,8 +144,9 @@ if df_ictio_master.empty:
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 # BARRA LATERAL (SIDEBAR)
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
-# --- CORREÇÃO DO CAMINHO DO LOGO ---
-st.sidebar.image("assets/logo.png")
+if logo_base64:
+    # CORREÇÃO: Usando a imagem carregada da nuvem
+    st.sidebar.image(f"data:image/png;base64,{logo_base64}")
 
 st.sidebar.header("Filtros do Relatório")
 tipo_analise = st.sidebar.radio("Selecione o tipo de análise:", ("Dia Específico", "Período"))
@@ -155,6 +168,7 @@ fase_selecionada = st.sidebar.multiselect("Selecione a(s) Fase(s) do Resgate:", 
 st.sidebar.markdown("---")
 if st.sidebar.button("♻️ Atualizar Dados da Planilha"): 
     st.cache_data.clear()
+    st.cache_resource.clear()
     st.rerun()
 
 st.sidebar.markdown("---")
@@ -164,7 +178,6 @@ uploaded_files = st.sidebar.file_uploader("Escolha os arquivos de imagem", accep
 
 if st.sidebar.button("Enviar Fotos para o Repositório"):
     if uploaded_files:
-        repo = get_github_repo()
         if repo:
             folder_path = f"fotos_atividades/{data_foto.strftime('%Y-%m-%d')}"
             commit_message = f"Upload de fotos via app para o dia {data_foto.strftime('%d/%m/%Y')}"
@@ -190,17 +203,6 @@ else:
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 # CORPO PRINCIPAL DO DASHBOARD
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
-@st.cache_data(ttl=300)
-def get_base64_from_github(repo, file_path):
-    try:
-        content = repo.get_contents(file_path)
-        return base64.b64encode(content.decoded_content).decode()
-    except:
-        return None
-
-repo = get_github_repo()
-logo_base64 = get_base64_from_github(repo, "assets/logo.png") if repo else None
-
 if logo_base64:
     st.markdown(f'<div class="header"><img src="data:image/png;base64,{logo_base64}" class="header-logo"><div class="header-title">Acompanhamento Ambiental - PCH Senhora do Porto</div></div>', unsafe_allow_html=True)
 
@@ -214,7 +216,6 @@ else:
 if df_ictio_periodo.empty:
     st.warning("Nenhuma atividade de resgate registrada para este período com os filtros selecionados.")
 else:
-    # O restante do corpo do dashboard (KPIs, gráficos, mapa) permanece o mesmo.
     total_biomassa_g = df_ictio_periodo['Biomassa_(g)'].sum()
     vivos_biomassa_g = df_ictio_periodo[df_ictio_periodo['Destino'] == 'Vivo']['Biomassa_(g)'].sum()
     
@@ -299,7 +300,6 @@ else:
         fig_temporal.update_layout(title_x=0.5, height=400, legend_title_text='Condição', yaxis_title="Biomassa (g)")
         st.plotly_chart(fig_temporal, use_container_width=True)
 
-    # --- NOVA LÓGICA PARA EXIBIR FOTOS DO GITHUB ---
     with st.container(border=True):
         data_para_fotos = end_date if tipo_analise == "Período" else start_date
         st.subheader(f"Registros Fotográficos de {data_para_fotos.strftime('%d/%m/%Y')}")
