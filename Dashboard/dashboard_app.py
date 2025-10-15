@@ -8,7 +8,7 @@ import base64
 import locale
 import gspread
 from google.oauth2.service_account import Credentials
-from github import Github
+from github import Github, Auth # <-- Alterado para a nova autenticação
 import re
 
 # --- Configuração de Idioma ---
@@ -33,7 +33,9 @@ def connect_to_google_sheets():
 @st.cache_resource
 def get_github_repo():
     try:
-        g = Github(st.secrets["GITHUB_TOKEN"])
+        # --- CORREÇÃO DO AVISO de autenticação ---
+        auth = Auth.Token(st.secrets["GITHUB_TOKEN"])
+        g = Github(auth=auth)
         repo = g.get_repo(st.secrets["GITHUB_REPO"])
         return repo
     except Exception as e:
@@ -46,7 +48,7 @@ def upload_to_github(repo, file_path, content, commit_message):
         st.sidebar.success(f"Arquivo '{os.path.basename(file_path)}' enviado!")
     except Exception as e:
         if e.status == 422:
-            st.sidebar.warning(f"Arquivo '{os.path.basename(file_path)}' já existe. Não foi enviado novamente.")
+            st.sidebar.warning(f"Arquivo '{os.path.basename(file_path)}' já existe.")
         else:
             st.sidebar.error(f"Falha ao enviar '{os.path.basename(file_path)}': {e}")
 
@@ -95,7 +97,8 @@ def carregar_dados_completos():
         
         df_ictio = df_ictio.astype(str).replace('', None).replace('nan', None).replace('<NA>', None)
         
-        df_ictio['Data'] = pd.to_datetime(df_ictio['Data'], errors='coerce')
+        # --- CORREÇÃO DO AVISO de data ---
+        df_ictio['Data'] = pd.to_datetime(df_ictio['Data'], dayfirst=True, errors='coerce')
         df_ictio.dropna(subset=['Data'], inplace=True)
         cols_numericas_ictio = ['N°_Individuos', 'Biomassa_(g)']
         for col in cols_numericas_ictio:
@@ -113,7 +116,8 @@ def carregar_dados_completos():
         df_abiotico = pd.DataFrame(data_abio, columns=headers_abio)
         df_abiotico = df_abiotico.loc[:, df_abiotico.columns.notna() & (df_abiotico.columns != '')]
         
-        df_abiotico['Data'] = pd.to_datetime(df_abiotico['Data'], errors='coerce')
+        # --- CORREÇÃO DO AVISO de data ---
+        df_abiotico['Data'] = pd.to_datetime(df_abiotico['Data'], dayfirst=True, errors='coerce')
         df_abiotico.dropna(subset=['Data'], inplace=True)
         cols_numericas_abiotico = ['Oxigênio', 'Temperatura', 'pH', 'Nível']
         for col in cols_numericas_abiotico:
@@ -300,7 +304,6 @@ else:
         fig_temporal.update_layout(title_x=0.5, height=400, legend_title_text='Condição', yaxis_title="Biomassa (g)")
         st.plotly_chart(fig_temporal, use_container_width=True)
 
-    # --- CORREÇÃO DE INDENTAÇÃO ---
     with st.container(border=True):
         data_para_fotos = end_date if tipo_analise == "Período" else start_date
         st.subheader(f"Registros Fotográficos de {data_para_fotos.strftime('%d/%m/%Y')}")
@@ -356,18 +359,23 @@ else:
             center_lat = df_mapa['Latitude_num'].mean()
             center_lon = df_mapa['Longitude_num'].mean()
             
-            fig_mapa = px.scatter_mapbox(df_mapa, lat="Latitude_num", lon="Longitude_num", 
+            # --- CORREÇÃO DO AVISO do mapa ---
+            fig_mapa = px.scatter_map(df_mapa, lat="Latitude_num", lon="Longitude_num", 
                                          size="Biomassa_(g)", 
                                          color="Condição", 
                                          hover_name="Ponto_Amostral",
                                          color_discrete_map=CHART_COLOR_PALETTE,
                                          hover_data={"Biomassa_(g)": ':.2f', "Latitude_num": False, "Longitude_num": False},
-                                         mapbox_style="satellite-streets", 
                                          center=dict(lat=center_lat, lon=center_lon), 
-                                         zoom=15,
+                                         zoom=14, # Ajustei o zoom para 14, pode ser melhor
                                          size_max=20)
-                                         
-            fig_mapa.update_layout(height=500, margin={"r":0,"t":40,"l":0,"b":0}, legend_title_text='Condição')
+            
+            fig_mapa.update_layout(
+                mapbox_style="satellite-streets",
+                height=500, 
+                margin={"r":0,"t":40,"l":0,"b":0}, 
+                legend_title_text='Condição'
+            )
             st.plotly_chart(fig_mapa, use_container_width=True)
         else:
             st.warning("Nenhum dado de coordenada de NATIVOS encontrado com os filtros selecionados.")
