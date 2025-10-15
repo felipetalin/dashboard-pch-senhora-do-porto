@@ -77,7 +77,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# --- CORREÇÃO: ADICIONANDO O TOKEN DO MAPBOX DE VOLTA ---
+# --- CORREÇÃO DEFINITIVA: ADICIONANDO O TOKEN DO MAPBOX DE VOLTA ---
 MAPBOX_TOKEN = "pk.eyJ1IjoiZmVsaXBldGFsaW4iLCJhIjoiY21mZm9pbG42MDhxczJqcHQ2azZhcTNtdCJ9.Ej4EtF8HH10mZraWnBC_mg"
 
 @st.cache_data(ttl=300)
@@ -375,3 +375,4 @@ else:
             st.plotly_chart(fig_mapa, use_container_width=True)
         else:
             st.warning("Nenhum dado de coordenada de NATIVOS encontrado com os filtros selecionados.")
+
