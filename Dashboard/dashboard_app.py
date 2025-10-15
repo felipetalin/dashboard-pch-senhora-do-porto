@@ -23,7 +23,9 @@ except locale.Error:
 @st.cache_resource(ttl=600)
 def connect_to_google_sheets():
     scopes = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-    creds = Credentials.from_service_account_info(st.secrets["google_credentials"], scopes=scopes)
+    creds_dict = st.secrets["gcp_service_account"].to_dict()
+    creds_dict["private_key"] = st.secrets["private_key_google"]
+    creds = Credentials.from_service_account_info(creds_dict, scopes=scopes)
     client = gspread.authorize(creds)
     return client
 
@@ -354,4 +356,5 @@ else:
             st.plotly_chart(fig_mapa, use_container_width=True)
         else:
             st.warning("Nenhum dado de coordenada de NATIVOS encontrado com os filtros selecionados.")
+
 
