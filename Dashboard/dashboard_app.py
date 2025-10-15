@@ -8,7 +8,7 @@ import base64
 import locale
 import gspread
 from google.oauth2.service_account import Credentials
-from github import Github, Auth # <-- Alterado para a nova autenticação
+from github import Github, Auth
 import re
 
 # --- Configuração de Idioma ---
@@ -33,7 +33,6 @@ def connect_to_google_sheets():
 @st.cache_resource
 def get_github_repo():
     try:
-        # --- CORREÇÃO DO AVISO de autenticação ---
         auth = Auth.Token(st.secrets["GITHUB_TOKEN"])
         g = Github(auth=auth)
         repo = g.get_repo(st.secrets["GITHUB_REPO"])
@@ -97,7 +96,6 @@ def carregar_dados_completos():
         
         df_ictio = df_ictio.astype(str).replace('', None).replace('nan', None).replace('<NA>', None)
         
-        # --- CORREÇÃO DO AVISO de data ---
         df_ictio['Data'] = pd.to_datetime(df_ictio['Data'], dayfirst=True, errors='coerce')
         df_ictio.dropna(subset=['Data'], inplace=True)
         cols_numericas_ictio = ['N°_Individuos', 'Biomassa_(g)']
@@ -116,7 +114,6 @@ def carregar_dados_completos():
         df_abiotico = pd.DataFrame(data_abio, columns=headers_abio)
         df_abiotico = df_abiotico.loc[:, df_abiotico.columns.notna() & (df_abiotico.columns != '')]
         
-        # --- CORREÇÃO DO AVISO de data ---
         df_abiotico['Data'] = pd.to_datetime(df_abiotico['Data'], dayfirst=True, errors='coerce')
         df_abiotico.dropna(subset=['Data'], inplace=True)
         cols_numericas_abiotico = ['Oxigênio', 'Temperatura', 'pH', 'Nível']
@@ -355,19 +352,18 @@ else:
         df_mapa = df_coords.groupby(['Ponto_Amostral', 'Latitude_num', 'Longitude_num', 'Condição'])['Biomassa_(g)'].sum().reset_index()
         df_mapa.dropna(subset=['Latitude_num', 'Longitude_num'], inplace=True)
         
-      if not df_mapa.empty:
+        if not df_mapa.empty:
             center_lat = df_mapa['Latitude_num'].mean()
             center_lon = df_mapa['Longitude_num'].mean()
             
-            # --- VERSÃO FINAL COM SATÉLITE ---
-            px.set_mapbox_access_token(st.secrets.get("MAPBOX_TOKEN", MAPBOX_TOKEN)) # Adicionado para garantir o token
+            px.set_mapbox_access_token(st.secrets.get("MAPBOX_TOKEN", ""))
             fig_mapa = px.scatter_mapbox(df_mapa, lat="Latitude_num", lon="Longitude_num", 
                                          size="Biomassa_(g)", 
                                          color="Condição", 
                                          hover_name="Ponto_Amostral",
                                          color_discrete_map=CHART_COLOR_PALETTE,
                                          hover_data={"Biomassa_(g)": ':.2f', "Latitude_num": False, "Longitude_num": False},
-                                         mapbox_style="satellite-streets", # <-- O ESTILO DE SATÉLITE
+                                         mapbox_style="satellite-streets",
                                          center=dict(lat=center_lat, lon=center_lon), 
                                          zoom=15,
                                          size_max=20)
@@ -376,4 +372,3 @@ else:
             st.plotly_chart(fig_mapa, use_container_width=True)
         else:
             st.warning("Nenhum dado de coordenada de NATIVOS encontrado com os filtros selecionados.")
-
