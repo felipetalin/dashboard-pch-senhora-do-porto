@@ -355,27 +355,25 @@ else:
         df_mapa = df_coords.groupby(['Ponto_Amostral', 'Latitude_num', 'Longitude_num', 'Condição'])['Biomassa_(g)'].sum().reset_index()
         df_mapa.dropna(subset=['Latitude_num', 'Longitude_num'], inplace=True)
         
-        if not df_mapa.empty:
+      if not df_mapa.empty:
             center_lat = df_mapa['Latitude_num'].mean()
             center_lon = df_mapa['Longitude_num'].mean()
             
-            # --- CORREÇÃO DO AVISO do mapa ---
-            fig_mapa = px.scatter_map(df_mapa, lat="Latitude_num", lon="Longitude_num", 
+            # --- VERSÃO FINAL COM SATÉLITE ---
+            px.set_mapbox_access_token(st.secrets.get("MAPBOX_TOKEN", MAPBOX_TOKEN)) # Adicionado para garantir o token
+            fig_mapa = px.scatter_mapbox(df_mapa, lat="Latitude_num", lon="Longitude_num", 
                                          size="Biomassa_(g)", 
                                          color="Condição", 
                                          hover_name="Ponto_Amostral",
                                          color_discrete_map=CHART_COLOR_PALETTE,
                                          hover_data={"Biomassa_(g)": ':.2f', "Latitude_num": False, "Longitude_num": False},
+                                         mapbox_style="satellite-streets", # <-- O ESTILO DE SATÉLITE
                                          center=dict(lat=center_lat, lon=center_lon), 
-                                         zoom=14, # Ajustei o zoom para 14, pode ser melhor
+                                         zoom=15,
                                          size_max=20)
-            
-            fig_mapa.update_layout(
-                mapbox_style="satellite-streets",
-                height=500, 
-                margin={"r":0,"t":40,"l":0,"b":0}, 
-                legend_title_text='Condição'
-            )
+                                         
+            fig_mapa.update_layout(height=500, margin={"r":0,"t":40,"l":0,"b":0}, legend_title_text='Condição')
             st.plotly_chart(fig_mapa, use_container_width=True)
         else:
             st.warning("Nenhum dado de coordenada de NATIVOS encontrado com os filtros selecionados.")
+
