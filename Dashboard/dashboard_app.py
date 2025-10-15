@@ -134,7 +134,6 @@ def get_base64_from_github(_repo, file_path):
     except Exception:
         return None
 
-# --- CARREGAMENTO INICIAL DOS DADOS E ATIVOS ---
 repo = get_github_repo()
 logo_base64 = get_base64_from_github(repo, "assets/logo.png") if repo else None
 df_ictio_master, df_abiotico_master = carregar_dados_completos()
@@ -192,7 +191,6 @@ if st.sidebar.button("Enviar Fotos para o Repositório"):
     else:
         st.sidebar.warning("Por favor, selecione pelo menos um arquivo de foto.")
 
-# --- Filtragem de Dados ---
 mask_ictio = (df_ictio_master['Data'].dt.date >= start_date) & (df_ictio_master['Data'].dt.date <= end_date) & (df_ictio_master['Resgate'].isin(fase_selecionada))
 df_ictio_periodo = df_ictio_master[mask_ictio]
 if not df_abiotico_master.empty:
@@ -217,7 +215,6 @@ else:
 if df_ictio_periodo.empty:
     st.warning("Nenhuma atividade de resgate registrada para este período com os filtros selecionados.")
 else:
-    # O restante do corpo do dashboard (KPIs, gráficos, mapa)
     total_biomassa_g = df_ictio_periodo['Biomassa_(g)'].sum()
     vivos_biomassa_g = df_ictio_periodo[df_ictio_periodo['Destino'] == 'Vivo']['Biomassa_(g)'].sum()
     
@@ -331,9 +328,14 @@ else:
         df_coords = df_coords[df_coords['Distribuição'] == 'Nativo']
         
         df_coords.rename(columns={'Destino': 'Condição'}, inplace=True)
-        # --- CORREÇÃO DO MAPA: Assegura que Latitude e Longitude são numéricas ---
-        df_coords['Latitude_num'] = pd.to_numeric(df_coords['Latitude'], errors='coerce')
-        df_coords['Longitude_num'] = pd.to_numeric(df_coords['Longitude'], errors='coerce')
+        
+        # --- CORREÇÃO DEFINITIVA DO MAPA ---
+        # 1. Converte para string para poder usar o .str.replace
+        # 2. Remove todos os pontos (.)
+        # 3. Substitui a vírgula (,) por ponto (.) para o decimal
+        # 4. Converte para número, tratando erros
+        df_coords['Latitude_num'] = pd.to_numeric(df_coords['Latitude'].astype(str).str.replace('.', '', regex=False).str.replace(',', '.', regex=False), errors='coerce')
+        df_coords['Longitude_num'] = pd.to_numeric(df_coords['Longitude'].astype(str).str.replace('.', '', regex=False).str.replace(',', '.', regex=False), errors='coerce')
         
         df_mapa = df_coords.groupby(['Ponto_Amostral', 'Latitude_num', 'Longitude_num', 'Condição'])['Biomassa_(g)'].sum().reset_index()
         df_mapa.dropna(subset=['Latitude_num', 'Longitude_num'], inplace=True)
@@ -357,5 +359,3 @@ else:
             st.plotly_chart(fig_mapa, use_container_width=True)
         else:
             st.warning("Nenhum dado de coordenada de NATIVOS encontrado com os filtros selecionados.")
-
-
