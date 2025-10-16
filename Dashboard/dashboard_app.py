@@ -261,7 +261,7 @@ else:
     
     col_graf1, col_graf2 = st.columns(2)
     with col_graf1, st.container(border=True):
-        st.subheader("Biomassa por Distribuição e Condição")
+        st.subheader("Biomassa por Distribuição")
         df_dist = df_ictio_periodo.groupby(['Distribuição', 'Destino'])['Biomassa_(g)'].sum().reset_index()
         df_dist.rename(columns={'Destino': 'Condição'}, inplace=True)
         fig_dist = px.bar(df_dist, x='Distribuição', y='Biomassa_(g)', color='Condição', title="<b>Biomassa (g) por Distribuição e Condição</b>", color_discrete_map=CHART_COLOR_PALETTE)
@@ -375,5 +375,6 @@ else:
             st.plotly_chart(fig_mapa, use_container_width=True)
         else:
             st.warning("Nenhum dado de coordenada de NATIVOS encontrado com os filtros selecionados.")
+
 
 
