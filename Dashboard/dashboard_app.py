@@ -327,7 +327,7 @@ else:
             st.warning("Não foi possível conectar ao GitHub para buscar as fotos.")
 
     with st.container(border=True):
-        st.subheader("Mapa de Atividades de NATIVOS (Biomassa por Condição)")
+        st.subheader("Biomassa resgatada de NATIVOS (Biomassa por Condição)")
         df_coords = df_ictio_periodo.copy()
         df_coords = df_coords[df_coords['Distribuição'] == 'Nativo']
         df_coords.rename(columns={'Destino': 'Condição'}, inplace=True)
@@ -375,4 +375,5 @@ else:
             st.plotly_chart(fig_mapa, use_container_width=True)
         else:
             st.warning("Nenhum dado de coordenada de NATIVOS encontrado com os filtros selecionados.")
+
 
