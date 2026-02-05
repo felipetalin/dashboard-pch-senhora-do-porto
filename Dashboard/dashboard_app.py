@@ -51,6 +51,7 @@ def upload_to_github(repo, file_path, content, commit_message):
         else:
             st.sidebar.error(f"Falha ao enviar '{os.path.basename(file_path)}': {e}")
 
+
 # =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 # CONFIGURAÇÃO GERAL E CARREGAMENTO DE DADOS
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
@@ -76,9 +77,6 @@ st.markdown("""
     }
 </style>
 """, unsafe_allow_html=True)
-
-# --- CORREÇÃO DEFINITIVA: ADICIONANDO O TOKEN DO MAPBOX DE VOLTA ---
-MAPBOX_TOKEN = "pk.eyJ1IjoiZmVsaXBldGFsaW4iLCJhIjoiY21mZm9pbG42MDhxczJqcHQ2azZhcTNtdCJ9.Ej4EtF8HH10mZraWnBC_mg"
 
 @st.cache_data(ttl=300)
 def carregar_dados_completos():
@@ -358,19 +356,18 @@ else:
         if not df_mapa.empty:
             center_lat = df_mapa['Latitude_num'].mean()
             center_lon = df_mapa['Longitude_num'].mean()
-            
-            px.set_mapbox_access_token(MAPBOX_TOKEN)
-            fig_mapa = px.scatter_mapbox(df_mapa, lat="Latitude_num", lon="Longitude_num", 
-                                         size="Biomassa_(g)", 
-                                         color="Condição", 
+
+            fig_mapa = px.scatter_mapbox(df_mapa, lat="Latitude_num", lon="Longitude_num",
+                                         size="Biomassa_(g)",
+                                         color="Condição",
                                          hover_name="Ponto_Amostral",
                                          color_discrete_map=CHART_COLOR_PALETTE,
                                          hover_data={"Biomassa_(g)": ':.2f', "Latitude_num": False, "Longitude_num": False},
-                                         mapbox_style="satellite-streets",
-                                         center=dict(lat=center_lat, lon=center_lon), 
+                                         mapbox_style="open-street-map",
+                                         center=dict(lat=center_lat, lon=center_lon),
                                          zoom=15,
                                          size_max=20)
-                                         
+
             fig_mapa.update_layout(height=500, margin={"r":0,"t":40,"l":0,"b":0}, legend_title_text='Condição')
             st.plotly_chart(fig_mapa, use_container_width=True)
         else:
