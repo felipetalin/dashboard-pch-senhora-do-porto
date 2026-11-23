@@ -9,7 +9,7 @@ import locale
 import gspread
 from google.oauth2.service_account import Credentials
 from github import Github, Auth
-import re
+import math
 
 # --- Configuração de Idioma ---
 try:
@@ -330,42 +330,35 @@ else:
         df_coords = df_coords[df_coords['Distribuição'] == 'Nativo']
         df_coords.rename(columns={'Destino': 'Condição'}, inplace=True)
         
-        def clean_coord(coord_str):
-            if not isinstance(coord_str, str) or coord_str.strip() == '':
-                return None
-            
-            numbers_only = re.sub(r'[^\d-]', '', coord_str)
-            
-            if not numbers_only or numbers_only == '-':
-                return None
-            
-            if numbers_only.startswith('-'):
-                if len(numbers_only) > 3:
-                    return pd.to_numeric(numbers_only[:3] + '.' + numbers_only[3:], errors='coerce')
-            elif len(numbers_only) > 2:
-                return pd.to_numeric(numbers_only[:2] + '.' + numbers_only[2:], errors='coerce')
-            
-            return pd.to_numeric(numbers_only, errors='coerce')
+        for column, limit in [('Latitude', 90), ('Longitude', 180)]:
+            values = df_coords[column].astype('string').str.strip().str.rstrip('°').str.strip()
+            values = pd.to_numeric(values.str.replace(',', '.', regex=False), errors='coerce')
+            df_coords[column + '_num'] = values.where(values.between(-limit, limit))
 
-        df_coords['Latitude_num'] = df_coords['Latitude'].apply(clean_coord)
-        df_coords['Longitude_num'] = df_coords['Longitude'].apply(clean_coord)
-        
         df_mapa = df_coords.groupby(['Ponto_Amostral', 'Latitude_num', 'Longitude_num', 'Condição'])['Biomassa_(g)'].sum().reset_index()
         df_mapa.dropna(subset=['Latitude_num', 'Longitude_num'], inplace=True)
         
         if not df_mapa.empty:
-            center_lat = df_mapa['Latitude_num'].mean()
-            center_lon = df_mapa['Longitude_num'].mean()
+            lat = df_mapa['Latitude_num']
+            lon = df_mapa['Longitude_num']
+            center_lat = (lat.min() + lat.max()) / 2
+            center_lon = (lon.min() + lon.max()) / 2
+            # Enquadra o trecho filtrado, inclusive em telas estreitas.
+            span = max(lon.max() - lon.min(),
+                       (lat.max() - lat.min()) / max(math.cos(math.radians(center_lat)), 0.01),
+                       0.0001)
+            zoom = min(17, max(0, math.log2(360 * 0.5 / span)))
             
             fig_mapa = px.scatter_map(df_mapa, lat="Latitude_num", lon="Longitude_num", 
                                          size="Biomassa_(g)", 
                                          color="Condição", 
                                          hover_name="Ponto_Amostral",
                                          color_discrete_map=CHART_COLOR_PALETTE,
-                                         hover_data={"Biomassa_(g)": ':.2f', "Latitude_num": False, "Longitude_num": False},
+                                         hover_data={"Biomassa_(g)": ':.2f', "Latitude_num": True, "Longitude_num": True},
+                                         labels={"Latitude_num": "Latitude", "Longitude_num": "Longitude"},
                                          map_style="satellite-streets",
                                          center=dict(lat=center_lat, lon=center_lon), 
-                                         zoom=15,
+                                         zoom=zoom,
                                          size_max=20)
                                          
             fig_mapa.update_layout(height=500, margin={"r":0,"t":40,"l":0,"b":0}, legend_title_text='Condição')
