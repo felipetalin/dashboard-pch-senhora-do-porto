@@ -77,8 +77,6 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# --- CORREÇÃO DEFINITIVA: ADICIONANDO O TOKEN DO MAPBOX DE VOLTA ---
-MAPBOX_TOKEN = "pk.eyJ1IjoiZmVsaXBldGFsaW4iLCJhIjoiY21mZm9pbG42MDhxczJqcHQ2azZhcTNtdCJ9.Ej4EtF8HH10mZraWnBC_mg"
 
 @st.cache_data(ttl=300)
 def carregar_dados_completos():
@@ -359,14 +357,13 @@ else:
             center_lat = df_mapa['Latitude_num'].mean()
             center_lon = df_mapa['Longitude_num'].mean()
             
-            px.set_mapbox_access_token(MAPBOX_TOKEN)
-            fig_mapa = px.scatter_mapbox(df_mapa, lat="Latitude_num", lon="Longitude_num", 
+            fig_mapa = px.scatter_map(df_mapa, lat="Latitude_num", lon="Longitude_num", 
                                          size="Biomassa_(g)", 
                                          color="Condição", 
                                          hover_name="Ponto_Amostral",
                                          color_discrete_map=CHART_COLOR_PALETTE,
                                          hover_data={"Biomassa_(g)": ':.2f', "Latitude_num": False, "Longitude_num": False},
-                                         mapbox_style="satellite-streets",
+                                         map_style="satellite-streets",
                                          center=dict(lat=center_lat, lon=center_lon), 
                                          zoom=15,
                                          size_max=20)
